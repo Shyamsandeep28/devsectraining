@@ -1,0 +1,338 @@
+1.Pod Defination 
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: pod
+  name: pod
+spec:
+  containers:
+  - image: nginx
+    name: pod
+    resources: {}
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
+
+
+2. Deployment file
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webserver
+  labels:
+    app: nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: c1
+        image: nginx
+
+3. Service yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: devnodeservice
+spec:
+  selector:
+    app: nginx
+  type: NodePort
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+
+4. Configmap
+-Pod defination 
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dev-pod
+spec:
+  containers:
+  - name: dev-container
+    image: nginx
+    volumeMounts:
+    - name: dev-volume
+      mountPath: /etc/config
+  volumes:
+  - name: dev-volume
+    configMap:
+      name: dev-configmap
+-ConfigMap definition 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dev-configmap
+data:
+  APP_CONFIG: |
+    key1=value1
+    key2=value2
+    key3=value3
+
+5. 
+version: '3'
+
+services:
+  # Database
+  db:
+    image: mysql:5.7
+    volumes:
+      - db_data:/var/lib/mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+    networks:
+      - wpsite
+  # phpmyadmin
+  phpmyadmin:
+    depends_on:
+      - db
+    image: phpmyadmin/phpmyadmin
+    restart: always
+    ports:
+      - '8080:80'
+    environment:
+      PMA_HOST: db
+      MYSQL_ROOT_PASSWORD: password
+    networks:
+      - wpsite
+  # Wordpress
+  wordpress:
+    depends_on:
+      - db
+    image: wordpress:latest
+    ports:
+      - '8000:80'
+    restart: always
+    volumes: ['./:/var/www/html']
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+    networks:
+      - wpsite
+networks:
+  wpsite:
+volumes:
+    db_data:
+
+6. 
+app.js file
+const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => {
+  res.send('Hello, Dockerized Node.js App!');
+});
+
+app.listen(3000, () => {
+  console.log('App listening on port 3000');
+});
+
+dockerfile
+FROM node:14
+WORKDIR /usr/src/app
+COPY package*.json ./
+RUN npm install
+COPY . .
+EXPOSE 3000
+CMD ["node", "app.js"]
+
+package.json
+{
+  "name": "dockerized-node-app",
+  "version": "1.0.0",
+  "description": "A basic Node.js application for Docker",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1"
+  }
+}
+
+
+
+7.
+File for app.py
+from flask import Flask
+import os
+
+app = Flask(__name__)
+
+@app.route("/")
+def hello():
+    return "Hello World!!"
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)
+
+-dockerfile 
+FROM python:3.6
+COPY . /app
+WORKDIR /app
+RUN pip install -r requirements.txt
+ENV PORT 5000
+EXPOSE 5000
+ENTRYPOINT ["python"]
+CMD ["app.py"]
+-Requirement file
+Flask==2.0.1
+
+8.
+vpc.tf 
+provider "aws" {
+  region     = "ap-south-1"
+  access_key = ""
+  secret_key = ""
+}
+
+resource "aws_vpc" "devvpc" {
+  cidr_block = "192.168.0.0/16"
+
+  tags = {
+    Name = "devvpc"
+  }
+}
+
+resource "aws_subnet" "devpubsub" {
+  vpc_id                  = aws_vpc.devvpc.id
+  cidr_block              = "192.168.1.0/24"
+  availability_zone       = "ap-south-1a"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "devpubsub"
+  }
+}
+
+resource "aws_internet_gateway" "devigw" {
+  vpc_id = aws_vpc.devvpc.id
+
+  tags = {
+    Name = "devigw"
+  }
+}
+
+resource "aws_route_table" "devroute" {
+  vpc_id = aws_vpc.devvpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.devigw.id
+  }
+
+  tags = {
+    Name = "devroute"
+  }
+}
+
+resource "aws_route_table_association" "devrouteassc" {
+  subnet_id      = aws_subnet.devpubsub.id
+  route_table_id = aws_route_table.devroute.id
+}
+
+resource "aws_security_group" "devsg" {
+  vpc_id = aws_vpc.devvpc.id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "devsg"
+  }
+}
+
+ec2.tf
+provider "aws" {
+  region = "ap-south-1"
+
+  access_key = ""
+  secret_key = ""
+}
+
+
+variable "existing_vpc_id" {
+  default = "vpc-01fa3f0f43ae05406"
+}
+
+variable "existing_subnet_id" {
+  default = "subnet-06997ee1e6ba0cf73"
+}
+
+
+resource "aws_instance" "customvpcinst" {
+  ami           = "ami-0a7cf821b91bcccbc"
+  instance_type = "t2.micro"
+
+  subnet_id = var.existing_subnet_id
+
+  tags = {
+    Name = "customvpcinst"
+  }
+}
+
+9. 
+rds.tf
+provider "aws" {
+  region = "ap-south-1"
+  access_key = ""
+  secret_key = ""
+}
+
+resource "aws_db_instance" "task_rds" {
+  identifier             = "task-db-instance"
+  allocated_storage      = 20
+  storage_type           = "gp2"
+  engine                 = "mysql"
+  engine_version         = "5.7"
+  instance_class         = "db.t2.micro"
+  username               = "joyboy"
+  password               = "joyboy1105"
+  port                   = 3306
+  publicly_accessible    = false
+
+  vpc_security_group_ids = ["sg-0550836da8d9740e9"]  # Specify the security group(s) for the RDS instance
+
+  parameter_group_name   = "default.mysql5.7"
+
+  maintenance_window     = "Mon:03:00-Mon:06:00"
+  backup_retention_period = 7
+  backup_window           = "02:00-03:00"
+
+  tags = {
+    Name = "task-db-instance"
+    Environment = "production"
+  }
+}
+
+
+
+
+
